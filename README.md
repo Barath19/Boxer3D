@@ -25,8 +25,9 @@ iPhone Camera + LiDAR
 ```
 
 1. **YOLO11n** detects objects in 2D (640×640, 80 COCO classes)
-2. **BoxerNet** lifts 2D boxes to 7-DoF 3D boxes (center, size, yaw) using DINOv3 visual features + LiDAR depth + Plücker ray encoding
-3. **SceneKit** renders 3D wireframe boxes anchored in the real world
+2. **BoxerNet** lifts 2D boxes to 7-DoF 3D boxes (center, size, yaw) using DINOv3 visual features + LiDAR depth
+3. **ARKit** Camera poses + Gravity Vector + LiDAR depth
+4. **SceneKit** renders 3D wireframe boxes anchored in the real world
 
 ## Requirements
 
