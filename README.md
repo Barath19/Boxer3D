@@ -43,9 +43,12 @@ iPhone Camera + LiDAR
    cd Boxer3D
    ```
 
-2. **Download models** (excluded from git)
-   
-   Place these in the `boxer/` directory:
+2. **Download models** from [Hugging Face](https://huggingface.co/Barath/boxer3d)
+   ```bash
+   pip install huggingface_hub
+   huggingface-cli download Barath/boxer3d --local-dir boxer/
+   ```
+   This places the following in the `boxer/` directory:
    - `BoxerNet.onnx` (~391 MB, float32) — exported from BoxerNet checkpoint
    - `yolo11n.onnx` (~10 MB, float32) — exported from Ultralytics YOLO11n
 
@@ -75,7 +78,7 @@ Both models run with ONNX Runtime CoreML Execution Provider for Metal/Neural Eng
 
 - [x] Port BoxerNet to Swift
 - [x] Convert BoxerNet.pt to ONNX
-- [ ] Upload ONNX weights for download
+- [x] Upload ONNX weights for download
 - [ ] Optimize for portrait mode
 
 ## Acknowledgments
