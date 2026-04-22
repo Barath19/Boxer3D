@@ -11,6 +11,23 @@ struct DetectionInfo: Identifiable {
     let confidence: Float
 }
 
+private enum ModelLoadError: LocalizedError {
+    case lidarRequired
+    case resourceMissing(String)
+    case initializationFailed(String, String)
+
+    var errorDescription: String? {
+        switch self {
+        case .lidarRequired:
+            return "This device does not support LiDAR scene depth."
+        case let .resourceMissing(resource):
+            return "\(resource) not found in the app bundle."
+        case let .initializationFailed(model, description):
+            return "\(model) failed: \(description)"
+        }
+    }
+}
+
 @MainActor
 final class ARViewModel: ObservableObject {
     @Published var status: String = "Initializing..."
@@ -22,76 +39,151 @@ final class ARViewModel: ObservableObject {
     private var boxerNet: BoxerNet?
     private var yoloDetector: YOLODetector?
     private var boxNodes: [SCNNode] = []
+    private var supportsSceneDepth = false
+    private var yoloLoadTask: Task<YOLODetector, Error>?
+    private var boxerLoadTask: Task<BoxerNet, Error>?
+    private let shouldPrewarmBoxerNet = ProcessInfo.processInfo.arguments.contains("--prewarm-boxernet")
 
-    func setup(sceneView: ARSCNView) {
+    func configure(sceneView: ARSCNView, supportsSceneDepth: Bool) {
         self.sceneView = sceneView
-        Task.detached { await self.loadModelsInBackground() }
+        self.supportsSceneDepth = supportsSceneDepth
+
+        guard supportsSceneDepth else {
+            status = ModelLoadError.lidarRequired.localizedDescription
+            return
+        }
+
+        Task {
+            await prepareForDetection()
+        }
     }
 
     // MARK: - Model Loading
 
-    nonisolated private func loadModelsInBackground() async {
-        let yoloPath = Bundle.main.path(forResource: "yolo11n", ofType: "onnx")
-        let boxerPath = Bundle.main.path(forResource: "BoxerNet", ofType: "onnx")
+    private func prepareForDetection() async {
+        status = "Loading detector..."
 
-        await MainActor.run { self.status = "Loading YOLO..." }
-        guard let yoloPath else {
-            await MainActor.run { self.status = "yolo11n.onnx not found" }
-            return
-        }
-        let yolo: YOLODetector
-        do { yolo = try YOLODetector(modelPath: yoloPath) }
-        catch {
-            await MainActor.run { self.status = "YOLO failed: \(error.localizedDescription)" }
-            return
-        }
-
-        await MainActor.run { self.status = "Loading BoxerNet..." }
-        guard let boxerPath else {
-            await MainActor.run { self.status = "BoxerNet.onnx not found" }
-            return
-        }
-        let boxer: BoxerNet
-        do { boxer = try BoxerNet(modelPath: boxerPath) }
-        catch {
-            await MainActor.run { self.status = "BoxerNet failed: \(error.localizedDescription)" }
-            return
-        }
-
-        await MainActor.run {
-            self.yoloDetector = yolo
-            self.boxerNet = boxer
-            self.status = "Ready — tap Detect 3D"
+        do {
+            _ = try await ensureYOLOLoaded()
+            if shouldPrewarmBoxerNet {
+                status = "Prewarming 3D model..."
+                _ = try await ensureBoxerNetLoaded()
+            }
+            status = readyStatus
+        } catch {
+            status = error.localizedDescription
         }
     }
 
     // MARK: - Detection
 
     func detectNow() {
-        guard let sceneView, let frame = sceneView.session.currentFrame,
-              let boxerNet, let yoloDetector else {
-            status = "Not ready"; return
+        guard supportsSceneDepth else {
+            status = ModelLoadError.lidarRequired.localizedDescription
+            return
+        }
+        guard let sceneView, let frame = sceneView.session.currentFrame else {
+            status = "AR session not ready"
+            return
         }
         guard frame.sceneDepth != nil else {
-            status = "No LiDAR depth"; return
+            status = "Move the phone to acquire depth"
+            return
         }
+        guard !isProcessing else { return }
 
         isProcessing = true
-        status = "Detecting..."
 
-        Task.detached {
+        Task {
             do {
+                if yoloDetector == nil {
+                    status = "Loading detector..."
+                }
+                let yoloDetector = try await ensureYOLOLoaded()
+
+                if boxerNet == nil {
+                    status = "Loading 3D model..."
+                }
+                let boxerNet = try await ensureBoxerNetLoaded()
+
+                status = "Detecting..."
                 let results = try await self.runPipeline(frame: frame, boxer: boxerNet, yolo: yoloDetector)
-                await MainActor.run {
-                    self.placeBoxes(results, in: sceneView)
-                    self.isProcessing = false
-                }
+                placeBoxes(results, in: sceneView)
+                isProcessing = false
             } catch {
-                await MainActor.run {
-                    self.status = "Error: \(error.localizedDescription)"
-                    self.isProcessing = false
-                }
+                status = error.localizedDescription
+                isProcessing = false
             }
+        }
+    }
+
+    private var readyStatus: String {
+        supportsSceneDepth ? "Ready — tap Detect 3D" : ModelLoadError.lidarRequired.localizedDescription
+    }
+
+    private func ensureYOLOLoaded() async throws -> YOLODetector {
+        if let yoloDetector {
+            return yoloDetector
+        }
+
+        let task = yoloLoadTask ?? Task.detached(priority: .userInitiated) {
+            try Self.loadYOLODetector()
+        }
+        yoloLoadTask = task
+
+        do {
+            let detector = try await task.value
+            yoloDetector = detector
+            yoloLoadTask = nil
+            return detector
+        } catch {
+            yoloLoadTask = nil
+            throw error
+        }
+    }
+
+    private func ensureBoxerNetLoaded() async throws -> BoxerNet {
+        if let boxerNet {
+            return boxerNet
+        }
+
+        let task = boxerLoadTask ?? Task.detached(priority: .userInitiated) {
+            try Self.loadBoxerNet()
+        }
+        boxerLoadTask = task
+
+        do {
+            let boxer = try await task.value
+            boxerNet = boxer
+            boxerLoadTask = nil
+            return boxer
+        } catch {
+            boxerLoadTask = nil
+            throw error
+        }
+    }
+
+    nonisolated private static func loadYOLODetector() throws -> YOLODetector {
+        guard let yoloPath = Bundle.main.path(forResource: "yolo11n", ofType: "onnx") else {
+            throw ModelLoadError.resourceMissing("yolo11n.onnx")
+        }
+
+        do {
+            return try YOLODetector(modelPath: yoloPath)
+        } catch {
+            throw ModelLoadError.initializationFailed("YOLO", error.localizedDescription)
+        }
+    }
+
+    nonisolated private static func loadBoxerNet() throws -> BoxerNet {
+        guard let boxerPath = Bundle.main.path(forResource: "BoxerNet", ofType: "onnx") else {
+            throw ModelLoadError.resourceMissing("BoxerNet.onnx")
+        }
+
+        do {
+            return try BoxerNet(modelPath: boxerPath)
+        } catch {
+            throw ModelLoadError.initializationFailed("BoxerNet", error.localizedDescription)
         }
     }
 

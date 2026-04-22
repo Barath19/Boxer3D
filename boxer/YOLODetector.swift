@@ -32,11 +32,13 @@ final class YOLODetector {
         "hair drier", "toothbrush"
     ]
 
-    init(modelPath: String) throws {
+    init(modelPath: String, useCoreML: Bool = true) throws {
         env = try ORTEnv(loggingLevel: .warning)
         let opts = try ORTSessionOptions()
-        let coreMLOpts = ORTCoreMLExecutionProviderOptions()
-        try opts.appendCoreMLExecutionProvider(with: coreMLOpts)
+        if useCoreML {
+            let coreMLOpts = ORTCoreMLExecutionProviderOptions()
+            try opts.appendCoreMLExecutionProvider(with: coreMLOpts)
+        }
         session = try ORTSession(env: env, modelPath: modelPath, sessionOptions: opts)
     }
 

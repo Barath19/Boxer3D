@@ -62,12 +62,14 @@ final class BoxerNet {
     static let gridW: Int = imageSize / patchSize  // 60
     static let numPatches: Int = gridH * gridW     // 3600
 
-    init(modelPath: String) throws {
+    init(modelPath: String, useCoreML: Bool = false) throws {
         env = try ORTEnv(loggingLevel: .warning)
         let opts = try ORTSessionOptions()
-        // CoreML EP → Metal GPU / Neural Engine acceleration.
-        let coreMLOpts = ORTCoreMLExecutionProviderOptions()
-        try opts.appendCoreMLExecutionProvider(with: coreMLOpts)
+        if useCoreML {
+            // CoreML EP can spike memory during BoxerNet compilation on device.
+            let coreMLOpts = ORTCoreMLExecutionProviderOptions()
+            try opts.appendCoreMLExecutionProvider(with: coreMLOpts)
+        }
         session = try ORTSession(env: env, modelPath: modelPath, sessionOptions: opts)
     }
 

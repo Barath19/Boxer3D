@@ -10,13 +10,20 @@ struct ARViewContainer: UIViewRepresentable {
         sceneView.autoenablesDefaultLighting = true
         sceneView.automaticallyUpdatesLighting = true
 
-        // Configure AR session with LiDAR.
+        guard ARWorldTrackingConfiguration.isSupported else {
+            viewModel.configure(sceneView: sceneView, supportsSceneDepth: false)
+            return sceneView
+        }
+
         let config = ARWorldTrackingConfiguration()
-        config.frameSemantics = [.sceneDepth]
+        let supportsSceneDepth = ARWorldTrackingConfiguration.supportsFrameSemantics(.sceneDepth)
+        if supportsSceneDepth {
+            config.frameSemantics.insert(.sceneDepth)
+        }
         config.planeDetection = [.horizontal, .vertical]
 
         sceneView.session.run(config)
-        viewModel.setup(sceneView: sceneView)
+        viewModel.configure(sceneView: sceneView, supportsSceneDepth: supportsSceneDepth)
 
         return sceneView
     }
