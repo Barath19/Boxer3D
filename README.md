@@ -1,5 +1,9 @@
 # Boxer3D
 
+[![oosmetrics](https://api.oosmetrics.com/api/v1/badge/achievement/a689afce-27c9-469c-a0dc-565a9e54d5cf.svg)](https://oosmetrics.com/repo/Barath19/Boxer3D)
+[![oosmetrics](https://api.oosmetrics.com/api/v1/badge/achievement/91450656-3174-4991-b1bb-3677faae3896.svg)](https://oosmetrics.com/repo/Barath19/Boxer3D)
+[![oosmetrics](https://api.oosmetrics.com/api/v1/badge/achievement/4f38829f-1e42-4382-8012-bb43fa9e11ec.svg)](https://oosmetrics.com/repo/Barath19/Boxer3D)
+
 AR 3D object detection for iPhone with LiDAR. Detects objects with YOLO and lifts them to 3D oriented bounding boxes using [BoxerNet](https://facebookresearch.github.io/boxer/) (Meta Research), displayed in augmented reality.
 
 ## Demo
